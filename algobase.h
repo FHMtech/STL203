@@ -485,6 +485,7 @@ inline int lexicographical_compare_3way(const char* first1, const char* last1,
 #endif
 }
 
+//destory第一个版本，接受一个指针，调用该类的析构函数
 template <class T>
 inline void destroy(T* pointer) {
     pointer->~T();
@@ -492,6 +493,19 @@ inline void destroy(T* pointer) {
 
 template <class T1, class T2>
 inline void construct(T1* p, const T2& value) {
+  /*、
+  new运算符
+  operator new函数，分配内存
+  placement new 用于初始化对象。用法new(p) A();可以实现在p所指低智商构建一个对象。（内存池技术广泛应用）
+    eg: A* a = new A;
+    此行代码将执行3个步骤：
+      1.分配内存，2.调用A的构造函数，3.返回指向分配内存的指针。
+      而分配内存由operator new(size_t )完成
+
+  */
+  //placement new是operator new的一个重载版本。
+  //如果你想在已经分配的内存中创建一个对象。使用new是不行的。
+  //placement new允许在一个已经分配好的内存中构造一个新的对象。
     new (p) T1(value);
 }
 
@@ -526,7 +540,7 @@ inline ForwardIterator
 __uninitialized_copy_aux(InputIterator first, InputIterator last,
                          ForwardIterator result,
                          __true_type) {
-  return copy(first, last, result);
+  return copy(first, last, result);//是POD，交由copy函数进行复制
 }
 
 template <class InputIterator, class ForwardIterator>
@@ -539,7 +553,7 @@ __uninitialized_copy_aux(InputIterator first, InputIterator last,
   try {
 #     endif /* __STL_USE_EXCEPTIONS */
     for ( ; first != last; ++first, ++cur)
-      construct(&*cur, *first);
+      construct(&*cur, *first);//non-POD，需由construct函数一个一个地构造
     return cur;
 #     ifdef __STL_USE_EXCEPTIONS
   }
@@ -556,16 +570,17 @@ inline ForwardIterator
 __uninitialized_copy(InputIterator first, InputIterator last,
                      ForwardIterator result, T*) {
   return __uninitialized_copy_aux(first, last, result,
-                                  __type_traits<T>::is_POD_type());
+                                  __type_traits<T>::is_POD_type());//迭代器的value type交由is_pod_type判断
 }
-
+//frist，last：src的其实位置和结束位置（前闭后开）
+//result：dest的起始位置
 template <class InputIterator, class ForwardIterator>
 inline ForwardIterator
   uninitialized_copy(InputIterator first, InputIterator last,
                      ForwardIterator result) {
-  return __uninitialized_copy(first, last, result, value_type(result));
+  return __uninitialized_copy(first, last, result, value_type(result));//value_type取出迭代器的value type
 }
-
+//针对char*和wchar_t*两种类型可以采用更具效率的做法memmove（直接移动内存内容）
 inline char* uninitialized_copy(const char* first, const char* last,
                                 char* result) {
   memmove(result, first, last - first);
@@ -618,7 +633,7 @@ inline ForwardIterator uninitialized_copy_n(InputIterator first, Size count,
 template <class ForwardIterator, class T>
 inline void
 __uninitialized_fill_aux(ForwardIterator first, ForwardIterator last, 
-                         const T& x, __true_type)
+                         const T& x, __true_type)//是POD，交由fill函数填充
 {
   fill(first, last, x);
 }
@@ -633,7 +648,7 @@ __uninitialized_fill_aux(ForwardIterator first, ForwardIterator last,
   try {
 #     endif /* __STL_USE_EXCEPTIONS */
     for ( ; cur != last; ++cur)
-      construct(&*cur, x);
+      construct(&*cur, x);//non-POD，由construct函数一个一个元素地构造
 #     ifdef __STL_USE_EXCEPTIONS
   }
   catch(...) {
@@ -647,22 +662,25 @@ template <class ForwardIterator, class T, class T1>
 inline void __uninitialized_fill(ForwardIterator first, ForwardIterator last, 
                                  const T& x, T1*) {
   __uninitialized_fill_aux(first, last, x,
-                           __type_traits<T1>::is_POD_type());
+                           __type_traits<T1>::is_POD_type());//迭代器的value type交由is_pod_type判断
 }
 
+//first，last：要填充的空间的起始位置和结束为止
+//x：填充值
 template <class ForwardIterator, class T>
 inline void uninitialized_fill(ForwardIterator first, ForwardIterator last, 
                                const T& x) {
-  __uninitialized_fill(first, last, x, value_type(first));
+  __uninitialized_fill(first, last, x, value_type(first));//value_type取出迭代器的value type
 }
 
 // Valid if copy construction is equivalent to assignment, and if the
 //  destructor is trivial.
+//藉由函数模板的参数推倒
 template <class ForwardIterator, class Size, class T>
 inline ForwardIterator
 __uninitialized_fill_n_aux(ForwardIterator first, Size n,
                            const T& x, __true_type) {
-  return fill_n(first, n, x);
+  return fill_n(first, n, x);//是POD类型，使用高阶函数fill_n执行
 }
 
 template <class ForwardIterator, class Size, class T>
@@ -674,7 +692,7 @@ __uninitialized_fill_n_aux(ForwardIterator first, Size n,
   try {
 #     endif /* __STL_USE_EXCEPTIONS */
     for ( ; n > 0; --n, ++cur)
-      construct(&*cur, x);
+      construct(&*cur, x);//non-POD则有construct函数进行赋值
     return cur;
 #     ifdef __STL_USE_EXCEPTIONS
   }
@@ -689,13 +707,20 @@ template <class ForwardIterator, class Size, class T, class T1>
 inline ForwardIterator __uninitialized_fill_n(ForwardIterator first, Size n,
                                               const T& x, T1*) {
   return __uninitialized_fill_n_aux(first, n, x,
-                                    __type_traits<T1>::is_POD_type());
+                                    __type_traits<T1>::is_POD_type());//判断该类型是否是POD(plain old data)
+                                      //标量类型或传统的c struct类型
 }
 
+//迭代器first指向欲初始化空间的起始处
+//n表示欲初始化的空间大小
+//x表示初值
+//对应fill_n()
+//返回值为被填入最后一个元素的下一个位置
 template <class ForwardIterator, class Size, class T>
 inline ForwardIterator uninitialized_fill_n(ForwardIterator first, Size n,
                                             const T& x) {
   return __uninitialized_fill_n(first, n, x, value_type(first));
+                                              //value_type取出first的value type
 }
 
 // Copies [first1, last1) into [result, result + (last1 - first1)), and
